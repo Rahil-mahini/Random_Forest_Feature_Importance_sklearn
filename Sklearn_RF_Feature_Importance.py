@@ -8,14 +8,13 @@ import os
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
- 
 import dask.dataframe as dd
 from dask.distributed import Client , LocalCluster
 
 
 
 # Load data from csv file in  X_file_path  and return pandas dataframe
-def load_X_data(X_file_path):
+def load_X_data(X_file_path , num_partitions ):
     
     try:
         # Load data from the CSV file which include the header as pandas dataframe
@@ -23,11 +22,7 @@ def load_X_data(X_file_path):
         print ( "X dataframe shape ", df.shape)
         # print ( "X dataframe " , df)
     
-        df = df.iloc [:, :100]  
-        print ( "X sliced dataframe shape ", df.shape)
-        print ( "X sliced ", df) 
-        
-        df = dd.from_pandas(df , npartitions = 2 )
+        df = dd.from_pandas(df , npartitions = num_partitions )
         print ( "df   dask   ", df)
         
         return df
@@ -46,7 +41,7 @@ def load_y_data(y_file_path):
         df = dd.read_csv(y_file_path, sep= ','    )
         print ( "df dataframe shape ", df.shape)
         
-        # exclude the first column and first row
+        # exclude the first column if includes the samples' names
         df = df.iloc[:, 1:]    
         print ( "y dataframe shape", df.shape)
         print ( "y dataframe", df)
@@ -58,11 +53,11 @@ def load_y_data(y_file_path):
         
        
         
-def feature_importacne(X_file_path, y_file_path, num_feature_to_select):
+def compute_feature_importacne(X_file_path, y_file_path, num_feature_to_select , num_partitions , num_estimators):
     
-    def feature_importance(X, y , num_feature_to_select):
+    def feature_importance(X, y , num_feature_to_select, num_estimators):
         
-        rf_model = RandomForestRegressor(n_estimators = 10)
+        rf_model = RandomForestRegressor(n_estimators = num_estimators)
 
         
         rf_model.fit(X, y)
@@ -98,10 +93,10 @@ def feature_importacne(X_file_path, y_file_path, num_feature_to_select):
         return selected_features
     
         
-    X = load_X_data(X_file_path)
+    X = load_X_data(X_file_path , num_partitions)
     y = load_y_data(y_file_path)
     
-    y = y['algae67kpa']
+    y = y['endpoint']
     print("y type:", type(y))
     print("y shape:", y.shape)
     print("y contain:", y)
@@ -109,7 +104,7 @@ def feature_importacne(X_file_path, y_file_path, num_feature_to_select):
     X = X.astype('float32') # Features MUST be float32
     y = y.astype('float32')  # Labels MUST be float32
      
-    selected = feature_importance ( X, y , num_feature_to_select )    
+    selected = feature_importance ( X, y , num_feature_to_select, num_estimators )    
     print ("selected  type: ", type(selected))  
     print ("selected : ", selected.shape)
      
@@ -132,12 +127,12 @@ def write_to_csv(X_selected, output_path):
         
       # Create the output directory if it doesn't exist                                                        
        os.makedirs(output_path, exist_ok = True)     
-       file_name = 'selected_sklearn_rf_dask.csv'
+       file_name = 'selected_features.csv'
        file_path = os.path.join(output_path, file_name)
                 
        X_selected.to_csv(file_path, sep = ',', header = True, index = True ) 
 
-       file_path_dict = {'sklearn_rf_dask': file_path}
+       file_path_dict = {'selected features using feature importance of random f orest': file_path}
        print("CSV file written successfully.")
        print ("CSV file size is  " , os.path.getsize(file_path))
        print ("CSV file column number is  " , X_selected.shape[1])
@@ -158,13 +153,15 @@ if __name__ == '__main__':
     client = Client(cluster) 
 
        
-    X_file_path = r'/mmfs1/projects/bakhtiyor.rasulev/Rahil/a67kpa_filtered/combinatorial.csv' 
-    y_file_path = r'/mmfs1/projects/bakhtiyor.rasulev/Rahil/a67kpa_filtered/endpoint_a67kpa.csv'  
-    output_path = r'a67kpa_filtered' 
+    X_file_path = r'features.csv' 
+    y_file_path = r'endpoint.csv'  
+    output_path = r'output' 
     
     num_feature_to_select = 1000
-    
-    X_selected = feature_importacne ( X_file_path, y_file_path , num_feature_to_select)
+    num_partitions = 10
+    num_estimators = 10
+
+    X_selected = compute_feature_importacne ( X_file_path, y_file_path , num_feature_to_select , num_partitions , num_estimators)
     
     file_path = write_to_csv(X_selected, output_path)
     print (file_path)
